@@ -7,7 +7,7 @@ import threads
 
 
 
-def run_in_thread(func=None, threads_per_class=10, single_instance=False):
+def run_in_thread(func=None, group=None, max_concurrency=0):
     if callable(func):
         decorator = run_in_thread()
         return decorator(func)
@@ -21,8 +21,8 @@ def run_in_thread(func=None, threads_per_class=10, single_instance=False):
         
         
         def __call__(self, *args, **kwargs):
-            tm = threads.TaskManager(threads_per_class, single_instance)
-            tm.add(self.__func, *args, **kwargs)
+            tm = threads.TaskManager()
+            return tm.add(self.__func, group, max_concurrency, *args, **kwargs)
         
         
         def __get__(self, obj, type=None):
