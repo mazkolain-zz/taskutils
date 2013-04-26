@@ -8,11 +8,36 @@ import threading
 
 
 
+#Thread local var storage
+__thread_locals = threading.local()
+
+
+def current_task():
+    return __thread_locals.current_task
+
+
+def set_current_task(task):
+    __thread_locals.current_task = task
+
+
+
+class TaskError(Exception):
+    pass
+
+
+
+class TaskCancelledError(TaskError):
+    pass
+
+
+
 class TaskItem:
     __target = None
     __group = None
     __args = None
     __kwargs = None
+    __wait_event = None
+    __is_cancelled = None
     
     
     def __init__(self, target, group=None, *args, **kwargs):
@@ -20,6 +45,8 @@ class TaskItem:
         self.__group = group
         self.__args = args
         self.__kwargs = kwargs
+        self.__wait_event = threading.Event()
+        self.__is_cancelled = False
     
     
     def _generate_group(self):
@@ -39,6 +66,29 @@ class TaskItem:
         return '.'.join(path)
     
     
+    def wait(self, timeout=None):
+        self.__wait_event.wait(timeout)
+        self.__wait_event.clear()
+        
+        #If it was cancelled
+        if self.__is_cancelled:
+            #TODO: Report task id in exception message
+            raise TaskCancelledError("Task cancelled")
+    
+    
+    def notify(self):
+        self.__wait_event.set()
+    
+    
+    def cancel(self):
+        self.__is_cancelled = True
+        self.notify_wait()
+    
+    
+    def is_cancelled(self):
+        return self.__is_cancelled
+    
+    
     def get_group(self):
         if self.__group is None:
             self.__group = self._generate_group()
@@ -47,6 +97,7 @@ class TaskItem:
     
     
     def run(self):
+        set_current_task(self)
         self.__target(*self.__args, **self.__kwargs)
 
 
