@@ -36,7 +36,11 @@ class TaskItem:
     __group = None
     __args = None
     __kwargs = None
+    
     __wait_event = None
+    __end_event = None
+    
+    __is_running = None
     __is_cancelled = None
     
     
@@ -46,6 +50,8 @@ class TaskItem:
         self.__args = args
         self.__kwargs = kwargs
         self.__wait_event = threading.Event()
+        self.__end_event = threading.Event()
+        self.__is_running = False
         self.__is_cancelled = False
     
     
@@ -97,8 +103,29 @@ class TaskItem:
     
     
     def run(self):
-        set_current_task(self)
-        self.__target(*self.__args, **self.__kwargs)
+        try:
+            set_current_task(self)
+            self.__is_running = True
+            self.__target(*self.__args, **self.__kwargs)
+        finally:
+            self.__is_running = False
+            self.__end_event.set()
+        
+    
+    def is_running(self):
+        return self.__is_running
+        
+    
+    def join(self, timeout=None):
+        self.__end_event.wait(timeout)
+        
+        #Return the event's status
+        if hasattr(self.__end_event, 'is_set'):
+            return self.__end_event.is_set()
+        
+        #Old Python version fallback for the above
+        else:
+            return self.__end_event.isSet()
 
 
 
