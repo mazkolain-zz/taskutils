@@ -184,15 +184,28 @@ class TaskQueueManager:
         #If queue queue reached to zero length, remove it
         if len(self.__groups[group]) == 0:
             del self.__groups[group]
+    
+    
+    def clear_group(self, group):
+        if group not in self.__groups:
+            raise KeyError('Unknown group id: %s' % group)
+        
+        del self.__groups[group]
+    
+    
+    def clear(self):
+        self.__groups = {}
 
 
 
 class TaskCountManager:
     __groups = None
+    __tasks = None
     
     
     def __init__(self):
         self.__groups = {}
+        self.__tasks = []
     
     
     def can_run(self, task, max_concurrency):
@@ -210,6 +223,10 @@ class TaskCountManager:
     
     
     def add_task(self, task):
+        
+        #Add the task to the general queue first
+        self.__tasks.append(task)
+        
         if task.get_group() not in self.__groups:
             self.__groups[task.get_group()] = [task]
         
@@ -217,11 +234,18 @@ class TaskCountManager:
             self.__groups[task.get_group()].append(task)
     
     
-    def get_tasks(self, group):
-        return list(self.__groups[group])
+    def get_tasks(self, group=None):
+        if group is None:
+            return list(self.__tasks)
+        else:
+            return list(self.__groups[group])
     
     
     def remove_task(self, task):
+        
+        #Remove from general task list
+        self.__tasks.remove(task)
+        
         if task.get_group() not in self.__groups:
             raise KeyError('Unknown group id: %s' % task.get_group())
         
@@ -296,6 +320,23 @@ class TaskManager:
         
         else:
             return False
+    
+    
+    def cancel_all(self):
+        try:
+            self.__lock.acquire()
+            
+            #Cancel every running task
+            for item in self.__count_manager.get_tasks():
+                item.cancel()
+                item.join()
+            
+            #Now cancel all the tasks queued in the meantime
+            self.__queue_manager.clear()
+            
+        
+        finally:
+            self.__lock.release()
     
     
     def add(self, target, group=None, max_concurrency=0, *args, **kwargs):
