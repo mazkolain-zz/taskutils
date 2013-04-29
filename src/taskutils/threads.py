@@ -88,7 +88,7 @@ class TaskItem:
     
     def cancel(self):
         self.__is_cancelled = True
-        self.notify_wait()
+        self.notify()
     
     
     def is_cancelled(self):
