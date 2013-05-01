@@ -5,6 +5,7 @@ Created on 22/10/2011
 '''
 import collections
 import threading
+from compat import event_is_set
 
 
 
@@ -20,6 +21,10 @@ def set_current_task(task):
     __thread_locals.current_task = task
 
 
+def remove_current_task():
+    del __thread_locals.current_task
+
+
 
 class TaskError(Exception):
     pass
@@ -27,6 +32,11 @@ class TaskError(Exception):
 
 
 class TaskCancelledError(TaskError):
+    pass
+
+
+
+class TaskCreateError(TaskError):
     pass
 
 
@@ -110,6 +120,7 @@ class TaskItem:
         finally:
             self.__is_running = False
             self.__end_event.set()
+            remove_current_task()
         
     
     def is_running(self):
@@ -262,6 +273,7 @@ class TaskManager:
     __queue_manager = TaskQueueManager()
     __count_manager = TaskCountManager()
     __lock = threading.RLock()
+    __cancel_event = threading.Event()
     
     
     def _get_next_task(self, group, max_concurrency):
@@ -306,6 +318,10 @@ class TaskManager:
             #And execute post actions
             self._task_post(task, max_concurrency)
         
+        #Fail if we are in the middle of a cancellation process
+        if event_is_set(self.__cancel_event):
+            raise TaskCreateError('Cannot create tasks while cancelling.')
+        
         #Try running the task
         if self.__count_manager.can_run(task, max_concurrency):
             
@@ -324,7 +340,7 @@ class TaskManager:
     
     def cancel_all(self):
         try:
-            self.__lock.acquire()
+            self.__cancel_event.set()
             
             #Cancel every running task
             for item in self.__count_manager.get_tasks():
@@ -334,13 +350,13 @@ class TaskManager:
             #Now cancel all the tasks queued in the meantime
             self.__queue_manager.clear()
             
-        
         finally:
-            self.__lock.release()
+            self.__cancel_event.clear()
     
     
     def add(self, target, group=None, max_concurrency=0, *args, **kwargs):
         task = TaskItem(target, group, *args, **kwargs)
+        
         self.__lock.acquire()
         
         try:
