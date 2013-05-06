@@ -6,6 +6,7 @@ Created on 22/10/2011
 import collections
 import threading
 from compat import event_is_set
+import traceback
 
 
 
@@ -117,6 +118,15 @@ class TaskItem:
             set_current_task(self)
             self.__is_running = True
             self.__target(*self.__args, **self.__kwargs)
+        
+        
+        except TaskCancelledError:
+            print "Task was cancelled"
+        
+        except Exception as ex:
+            print "Unhandled exception in task:"
+            #traceback.print_exc()
+        
         finally:
             self.__is_running = False
             self.__end_event.set()
