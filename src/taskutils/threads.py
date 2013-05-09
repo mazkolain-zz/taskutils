@@ -5,7 +5,7 @@ Created on 22/10/2011
 '''
 import collections
 import threading
-from compat import event_is_set
+from compat import AtomicEvent
 import traceback
 import time
 
@@ -66,8 +66,8 @@ class TaskItem:
         self.__group = group
         self.__args = args
         self.__kwargs = kwargs
-        self.__wait_event = threading.Event()
-        self.__end_event = threading.Event()
+        self.__wait_event = AtomicEvent()
+        self.__end_event = AtomicEvent()
         self.__is_running = False
         self.__is_cancelled = False
     
@@ -87,9 +87,6 @@ class TaskItem:
             ]
         
         return '.'.join(path)
-    
-    
-    
     
     
     def try_wait(self, timeout=None):
@@ -179,15 +176,7 @@ class TaskItem:
         
     
     def join(self, timeout=None):
-        self.__end_event.wait(timeout)
-        
-        #Return the event's status
-        if hasattr(self.__end_event, 'is_set'):
-            return self.__end_event.is_set()
-        
-        #Old Python version fallback for the above
-        else:
-            return self.__end_event.isSet()
+        return self.__end_event.wait(timeout)
 
 
 
