@@ -7,6 +7,7 @@ import collections
 import threading
 from compat import event_is_set
 import traceback
+import time
 
 
 
@@ -109,6 +110,27 @@ class TaskItem:
         #Raise an exception if a timeout is detected
         if not status:
             raise TaskWaitTimedOutError("Task timed out")
+    
+    
+    def condition_wait(self, condition, timeout=None):
+        start_time = time.time()
+        
+        #Keep testing until a timeout occurs
+        while timeout is None or start_time + timeout < time.time():
+            
+            #Perform the actual wait
+            if timeout is None:
+                self.wait()
+            else:
+                consumed_time = time.time() - start_time
+                self.wait(timeout - consumed_time)
+            
+            #Break if the condition is met
+            if condition:
+                return
+        
+        #Raise an exception if reached here (due to a timeout)
+        raise TaskWaitTimedOutError("Task timed out")
     
     
     def notify(self):
