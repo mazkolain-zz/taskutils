@@ -37,6 +37,11 @@ class TaskCancelledError(TaskError):
 
 
 
+class TaskWaitTimedOutError(TaskError):
+    pass
+
+
+
 class TaskCreateError(TaskError):
     pass
 
@@ -83,13 +88,27 @@ class TaskItem:
         return '.'.join(path)
     
     
-    def wait(self, timeout=None):
-        self.__wait_event.wait(timeout)
+    
+    
+    
+    def try_wait(self, timeout=None):
+        status = self.__wait_event.wait(timeout)
         
         #If it was cancelled
-        if self.__is_cancelled:
+        if self.__is_cancelled:    
             #TODO: Report task id in exception message
             raise TaskCancelledError("Task cancelled")
+        
+        #Return event status on exit
+        return status
+    
+    
+    def wait(self, timeout=None):
+        status = self.try_wait(timeout)
+        
+        #Raise an exception if a timeout is detected
+        if not status:
+            raise TaskWaitTimedOutError("Task timed out")
     
     
     def notify(self):
