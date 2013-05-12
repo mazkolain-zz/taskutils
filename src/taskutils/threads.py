@@ -313,7 +313,7 @@ class TaskManager:
     __queue_manager = TaskQueueManager()
     __count_manager = TaskCountManager()
     __lock = threading.RLock()
-    __cancel_event = threading.Event()
+    __cancel_event = AtomicEvent()
     
     
     def _get_next_task(self, group, max_concurrency):
@@ -359,7 +359,7 @@ class TaskManager:
             self._task_post(task, max_concurrency)
         
         #Fail if we are in the middle of a cancellation process
-        if event_is_set(self.__cancel_event):
+        if self.__cancel_event.is_set():
             raise TaskCreateError('Cannot create tasks while cancelling.')
         
         #Try running the task
