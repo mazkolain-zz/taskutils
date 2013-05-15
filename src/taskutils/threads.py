@@ -113,8 +113,11 @@ class TaskItem:
     def condition_wait(self, condition, timeout=None):
         start_time = time.time()
         
-        #Keep testing until a timeout occurs
-        while timeout is None or start_time + timeout < time.time():
+        while True:
+            
+            #Check for condition status
+            if condition:
+                return
             
             #Perform the actual wait
             if timeout is None:
@@ -122,13 +125,6 @@ class TaskItem:
             else:
                 consumed_time = time.time() - start_time
                 self.wait(timeout - consumed_time)
-            
-            #Break if the condition is met
-            if condition:
-                return
-        
-        #Raise an exception if reached here (due to a timeout)
-        raise TaskWaitTimedOutError("Task timed out")
     
     
     def notify(self):
