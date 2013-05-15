@@ -91,6 +91,7 @@ class TaskItem:
     
     def try_wait(self, timeout=None):
         status = self.__wait_event.wait(timeout)
+        self.__wait_event.clear()
         
         #If it was cancelled
         if self.__is_cancelled:    
@@ -132,7 +133,6 @@ class TaskItem:
     
     def notify(self):
         self.__wait_event.set()
-        self.__wait_event.clear()
     
     
     def cancel(self):
