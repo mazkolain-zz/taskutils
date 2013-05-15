@@ -5,7 +5,7 @@ Created on 22/10/2011
 '''
 import collections
 import threading
-from compat import AtomicEvent, event_is_set
+from compat import AtomicEvent
 import traceback
 import time
 
@@ -66,8 +66,8 @@ class TaskItem:
         self.__group = group
         self.__args = args
         self.__kwargs = kwargs
-        self.__wait_event = threading.Event()
-        self.__end_event = threading.Event()
+        self.__wait_event = AtomicEvent()
+        self.__end_event = AtomicEvent()
         self.__is_running = False
         self.__is_cancelled = False
     
@@ -90,9 +90,7 @@ class TaskItem:
     
     
     def try_wait(self, timeout=None):
-        self.__wait_event.wait(timeout)
-        status = event_is_set(self.__wait_event)
-        self.__wait_event.clear()
+        status = self.__wait_event.wait(timeout)
         
         #If it was cancelled
         if self.__is_cancelled:    
@@ -134,6 +132,7 @@ class TaskItem:
     
     def notify(self):
         self.__wait_event.set()
+        self.__wait_event.clear()
     
     
     def cancel(self):
@@ -177,8 +176,7 @@ class TaskItem:
         
     
     def join(self, timeout=None):
-        self.__end_event.wait(timeout)
-        return self.__wait_event(self.__end_event)
+        return self.__end_event.wait(timeout)
 
 
 
