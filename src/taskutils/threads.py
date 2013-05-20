@@ -110,13 +110,24 @@ class TaskItem:
             raise TaskWaitTimedOutError("Task timed out")
     
     
+    def _eval_condition(self, condition):
+        
+        #Check if it's callable
+        if hasattr(condition, '__call__'):
+            return condition()
+        
+        #Evaluate it directly
+        else:
+            return condition
+    
+    
     def condition_wait(self, condition, timeout=None):
         start_time = time.time()
         
         while True:
             
             #Check for condition status
-            if condition:
+            if self._eval_condition(condition):
                 return
             
             #Perform the actual wait
