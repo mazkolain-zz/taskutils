@@ -170,7 +170,7 @@ class TaskItem:
         
         except Exception as ex:
             print "Unhandled exception in task:"
-            #traceback.print_exc()
+            traceback.print_exc()
         
         finally:
             self.__is_running = False
