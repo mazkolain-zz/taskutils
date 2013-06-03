@@ -89,14 +89,18 @@ class TaskItem:
         return '.'.join(path)
     
     
+    def check_status(self):
+        if self.__is_cancelled:    
+            #TODO: Report task id in exception message
+            raise TaskCancelledError("Task cancelled")
+    
+    
     def try_wait(self, timeout=None):
         status = self.__wait_event.wait(timeout)
         self.__wait_event.clear()
         
-        #If it was cancelled
-        if self.__is_cancelled:    
-            #TODO: Report task id in exception message
-            raise TaskCancelledError("Task cancelled")
+        #Check if it was cancelled
+        self.check_status()
         
         #Return event status on exit
         return status
