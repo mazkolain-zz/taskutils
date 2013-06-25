@@ -193,10 +193,12 @@ class TaskItem:
 
 class TaskQueueManager:
     __groups = None
+    __mutex = None
     
     
     def __init__(self):
         self.__groups = {}
+        self.__mutex = threading.Lock()
     
     
     def has_group(self, group):
@@ -204,21 +206,34 @@ class TaskQueueManager:
     
     
     def get_tasks(self, group):
+        self.__mutex.acquire()
         
-        #Avoid returning the live queue
-        return list(self.__groups[group])
+        try:
+            #Avoid returning the live queue
+            result = list(self.__groups[group])
+        
+        finally:
+            self.__mutex.release()
+        
+        return result
     
     
     def add(self, task):
-        group = task.get_group()
+        self.__mutex.acquire()
         
-        #New container queue needed
-        if not self.has_group(group):
-            self.__groups[group] = collections.deque([task])
+        try:
+            group = task.get_group()
+            
+            #New container queue needed
+            if not self.has_group(group):
+                self.__groups[group] = collections.deque([task])
+            
+            #Append task to existing queue normally
+            else:
+                self.__groups[group].append(task)
         
-        #Append task to existing queue normally
-        else:
-            self.__groups[group].append(task)
+        finally:
+            self.__mutex.release()
     
     
     def _remove(self, container, task):
@@ -235,87 +250,132 @@ class TaskQueueManager:
     
     
     def remove(self, task):
-        group = task.get_group()
+        self.__mutex.acquire()
         
-        if group not in self.__groups:
-            raise KeyError('Unknown group id: %s' % group)
+        try:
+            group = task.get_group()
+            
+            if group not in self.__groups:
+                raise KeyError('Unknown group id: %s' % group)
+            
+            #Remove the task first
+            self._remove(self.__groups[group], task)
+            
+            #If queue queue reached to zero length, remove it
+            if len(self.__groups[group]) == 0:
+                del self.__groups[group]
         
-        #Remove the task first
-        self._remove(self.__groups[group], task)
-        
-        #If queue queue reached to zero length, remove it
-        if len(self.__groups[group]) == 0:
-            del self.__groups[group]
+        finally:
+            self.__mutex.release()
     
     
     def clear_group(self, group):
-        if group not in self.__groups:
-            raise KeyError('Unknown group id: %s' % group)
+        self.__mutex.acquire()
         
-        del self.__groups[group]
+        try:
+            if group not in self.__groups:
+                raise KeyError('Unknown group id: %s' % group)
+            
+            del self.__groups[group]
+        
+        finally:
+            self.__mutex.release()
     
     
     def clear(self):
-        self.__groups = {}
+        self.__mutex.acquire()
+        
+        try:
+            self.__groups = {}
+            
+        finally:
+            self.__mutex.release()
 
 
 
 class TaskCountManager:
     __groups = None
     __tasks = None
+    __mutex = None
     
     
     def __init__(self):
         self.__groups = {}
         self.__tasks = []
+        self.__mutex = threading.Lock()
     
     
     def can_run(self, task, max_concurrency):
-        if max_concurrency == 0:
-            return True
+        self.__mutex.acquire()
         
-        elif task.get_group() not in self.__groups:
-            return True
+        try:
+            if max_concurrency == 0:
+                result = True
+            
+            elif task.get_group() not in self.__groups:
+                result = True
+            
+            elif len(self.__groups[task.get_group()]) < max_concurrency:
+                result = True
+            
+            else:
+                result = False
         
-        elif len(self.__groups[task.get_group()]) < max_concurrency:
-            return True
+        finally:
+            self.__mutex.release()
         
-        else:
-            return False
+        return result
     
     
     def add_task(self, task):
+        self.__mutex.acquire()
         
-        #Add the task to the general queue first
-        self.__tasks.append(task)
+        try:
+            #Add the task to the general queue first
+            self.__tasks.append(task)
+            
+            if task.get_group() not in self.__groups:
+                self.__groups[task.get_group()] = [task]
+            
+            else:
+                self.__groups[task.get_group()].append(task)
         
-        if task.get_group() not in self.__groups:
-            self.__groups[task.get_group()] = [task]
-        
-        else:
-            self.__groups[task.get_group()].append(task)
+        finally:
+            self.__mutex.release()
     
     
     def get_tasks(self, group=None):
-        if group is None:
-            return list(self.__tasks)
-        else:
-            return list(self.__groups[group])
+        self.__mutex.acquire()
+        
+        try:
+            if group is None:
+                result = list(self.__tasks)
+            else:
+                result = list(self.__groups[group])
+        
+        finally:
+            self.__mutex
+        
+        return result
     
     
     def remove_task(self, task):
+        self.__mutex.acquire()
         
-        #Remove from general task list
-        self.__tasks.remove(task)
-        
-        if task.get_group() not in self.__groups:
-            raise KeyError('Unknown group id: %s' % task.get_group())
-        
-        elif len(self.__groups[task.get_group()]) == 1:
-            del self.__groups[task.get_group()]
-        
-        else:
-            self.__groups[task.get_group()].remove(task)
+        try:
+            #Remove from general task list
+            self.__tasks.remove(task)
+            
+            if task.get_group() not in self.__groups:
+                raise KeyError('Unknown group id: %s' % task.get_group())
+            
+            elif len(self.__groups[task.get_group()]) == 1:
+                del self.__groups[task.get_group()]
+            
+            else:
+                self.__groups[task.get_group()].remove(task)
+        finally:
+            self.__mutex.release()
 
 
 
@@ -323,8 +383,9 @@ class TaskManager:
     #Static class instances
     __queue_manager = TaskQueueManager()
     __count_manager = TaskCountManager()
-    __lock = threading.RLock()
-    __cancel_event = AtomicEvent()
+    __continue_signal = threading.Event()
+    __add_mutex = threading.Lock()
+    __cancel_mutex = threading.Lock()
     
     
     def _get_next_task(self, group, max_concurrency):
@@ -336,29 +397,26 @@ class TaskManager:
     
     
     def _task_post(self, task, max_concurrency):
-        self.__lock.acquire()
         
-        try:
-            #Decrement task count
-            self.__count_manager.remove_task(task)
+        self.__continue_signal.wait()
+        
+        #Decrement task count
+        self.__count_manager.remove_task(task)
+        
+        #A shortcut to the task's group
+        group = task.get_group()
+        
+        #Handle enqueued tasks
+        if self.__queue_manager.has_group(group):
             
-            #A shortcut to the task's group
-            group = task.get_group()
+            #Get the next runnable task on the container
+            next_task = self._get_next_task(group, max_concurrency)
             
-            #Handle enqueued tasks
-            if self.__queue_manager.has_group(group):
-                #Get the next runnable task on the container
-                next_task = self._get_next_task(group, max_concurrency)
+            #If it got started remove it from the queue
+            if next_task is not None:
                 
-                #If it got started remove it from the queue
-                if next_task is not None:
-                    
-                    
-                    if self._try_start(next_task, max_concurrency):
-                        self.__queue_manager.remove(next_task)
-        
-        finally:
-            self.__lock.release()
+                if self._try_start(next_task, max_concurrency):
+                    self.__queue_manager.remove(next_task)
     
     
     def _try_start(self, task, max_concurrency):
@@ -368,10 +426,6 @@ class TaskManager:
             
             #And execute post actions
             self._task_post(task, max_concurrency)
-        
-        #Fail if we are in the middle of a cancellation process
-        if self.__cancel_event.is_set():
-            raise TaskCreateError('Cannot create tasks while cancelling.')
         
         #Try running the task
         if self.__count_manager.can_run(task, max_concurrency):
@@ -390,8 +444,12 @@ class TaskManager:
     
     
     def cancel_all(self):
+        
+        self.__cancel_mutex.acquire()
+        
         try:
-            self.__cancel_event.set()
+            
+            self.__continue_signal.clear()
             
             #Cancel every running task
             for item in self.__count_manager.get_tasks():
@@ -402,13 +460,14 @@ class TaskManager:
             self.__queue_manager.clear()
             
         finally:
-            self.__cancel_event.clear()
+            self.__continue_signal.set()
+            self.__cancel_mutex.release()
     
     
     def add(self, target, group=None, max_concurrency=0, *args, **kwargs):
         task = TaskItem(target, group, *args, **kwargs)
         
-        self.__lock.acquire()
+        self.__add_mutex.acquire()
         
         try:
             #Enqueue if we can't start it
@@ -416,6 +475,6 @@ class TaskManager:
                 self.__queue_manager.add(task)
         
         finally:
-            self.__lock.release()
+            self.__add_mutex.release()
         
         return task
