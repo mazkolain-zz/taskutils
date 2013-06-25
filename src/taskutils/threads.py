@@ -383,9 +383,8 @@ class TaskManager:
     #Static class instances
     __queue_manager = TaskQueueManager()
     __count_manager = TaskCountManager()
-    __continue_signal = threading.Event()
     __add_mutex = threading.Lock()
-    __cancel_mutex = threading.Lock()
+    __continue_sem = threading.Semaphore()
     
     
     def _get_next_task(self, group, max_concurrency):
@@ -398,25 +397,29 @@ class TaskManager:
     
     def _task_post(self, task, max_concurrency):
         
-        self.__continue_signal.wait()
+        self.__continue_sem.acquire()
         
-        #Decrement task count
-        self.__count_manager.remove_task(task)
-        
-        #A shortcut to the task's group
-        group = task.get_group()
-        
-        #Handle enqueued tasks
-        if self.__queue_manager.has_group(group):
+        try:
             
-            #Get the next runnable task on the container
-            next_task = self._get_next_task(group, max_concurrency)
+            #Decrement task count
+            self.__count_manager.remove_task(task)
             
-            #If it got started remove it from the queue
-            if next_task is not None:
+            #A shortcut to the task's group
+            group = task.get_group()
+            
+            #Handle enqueued tasks
+            if self.__queue_manager.has_group(group):
                 
-                if self._try_start(next_task, max_concurrency):
-                    self.__queue_manager.remove(next_task)
+                #Get the next runnable task on the container
+                next_task = self._get_next_task(group, max_concurrency)
+                
+                #If it got started remove it from the queue
+                if next_task is not None:
+                    
+                    if self._try_start(next_task, max_concurrency):
+                        self.__queue_manager.remove(next_task)
+        finally:
+            self.__continue_sem.release()
     
     
     def _try_start(self, task, max_concurrency):
@@ -445,11 +448,9 @@ class TaskManager:
     
     def cancel_all(self):
         
-        self.__cancel_mutex.acquire()
+        self.__continue_sem.acquire()
         
         try:
-            
-            self.__continue_signal.clear()
             
             #Cancel every running task
             for item in self.__count_manager.get_tasks():
@@ -460,8 +461,7 @@ class TaskManager:
             self.__queue_manager.clear()
             
         finally:
-            self.__continue_signal.set()
-            self.__cancel_mutex.release()
+            self.__continue_sem.release()
     
     
     def add(self, target, group=None, max_concurrency=0, *args, **kwargs):
