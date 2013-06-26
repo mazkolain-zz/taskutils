@@ -354,7 +354,7 @@ class TaskCountManager:
                 result = list(self.__groups[group])
         
         finally:
-            self.__mutex
+            self.__mutex.release()
         
         return result
     
