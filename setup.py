@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='TaskUtils',
-    version='0.1',
+    version='0.2',
     description='A passive background task manager.',
     author='Mikel Azkolain',
     author_email='azkotoki@gmail.com',
